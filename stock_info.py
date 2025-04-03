@@ -1,17 +1,12 @@
-# 若无法解析导入 "akshare"，需先安装该库
-# 可在终端中运行以下命令进行安装：pip install akshare
 import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
-
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
-
-
-def get_single_stock_data(stock, start_date, end_date, result, lock):
+def get_single_stock_data(stock, start_date, end_date, result):
     """获取单支股票数据"""
-    code = stock['代码']
+    code = ''.join(c for c in stock['代码'] if c.isdigit())
     name = stock['名称']
     current_price = stock['最新价']
     
@@ -21,8 +16,7 @@ def get_single_stock_data(stock, start_date, end_date, result, lock):
         max_price = hist_data['收盘'].max()
         min_price = hist_data['收盘'].min()
         
-        with lock:
-            result.loc[len(result)] = [code, name, current_price, max_price, min_price]
+        result.loc[len(result)] = [code, name, current_price, max_price, min_price]
     except Exception as e:
         print(f"获取股票{code}数据失败: {e}")
 
@@ -43,18 +37,19 @@ def get_stock_data():
     # 准备结果DataFrame
     result = pd.DataFrame(
         columns=pd.Index(['股票代码', '股票名称', '当前价', '2年最高价', '2年最低价']))
+    
+    total_stocks = len(stock_list)
     lock = threading.Lock()
     
     with ThreadPoolExecutor() as executor:
         futures = []
-        for _, stock in stock_list.iterrows():
-            futures.append(executor.submit(
-                get_single_stock_data, stock, start_date, end_date, result, lock
-            ))
-        
-        # 等待所有任务完成
-        for future in futures:
+        for i, (_, stock) in enumerate(stock_list.iterrows(), 1):
+            futures.append(executor.submit(get_single_stock_data, stock, start_date, end_date, result))
+            
+        for i, future in enumerate(as_completed(futures), 1):
             future.result()
+            with lock:
+                print(f"进度: {i}/{total_stocks} ({(i/total_stocks)*100:.1f}%)")
     
     return result
 
